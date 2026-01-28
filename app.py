@@ -10,42 +10,32 @@ from PIL import Image
 st.set_page_config(page_title="KhataBook AI", page_icon="💰")
 st.title("💰 AI Munim Ji")
 
-# --- 2. KEY REPAIR (Sabse Zaruri Hissa) ---
+# --- 2. BULLETPROOF CONNECTION ---
 try:
-    if "google_creds" in st.secrets:
-        # Secrets se data nikala
-        creds_dict = dict(st.secrets["google_creds"])
-        
-        # --- MAGIC REPAIR START ---
-        # Ye line check karegi ki key tuti hui hai ya judi hui
-        raw_key = creds_dict["private_key"]
-        
-        # 1. Agar key mein "\n" likha hua hai text ki tarah, to use asli enter banao
-        fixed_key = raw_key.replace("\\n", "\n")
-        
-        # 2. Wapas dictionary mein daal do
-        creds_dict["private_key"] = fixed_key
-        # --- MAGIC REPAIR END ---
-        
+    if "google_json" in st.secrets:
+        # Direct JSON string padhenge -> No formatting errors!
+        creds_dict = json.loads(st.secrets["google_json"])
         gemini_key = st.secrets["GEMINI_API_KEY"]
     else:
-        st.error("Secrets nahi mile!")
+        st.error("Secrets mein 'google_json' nahi mila!")
         st.stop()
-except Exception as e:
-    st.error(f"Error: {e}")
-    st.stop()
-
-# --- 3. GOOGLE SHEETS CONNECTION ---
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-try:
+        
+    # Scope define karte hain
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    
+    # Connect karte hain
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
     sheet = client.open("Expenses").sheet1
+
+except json.JSONDecodeError:
+    st.error("Secrets mein JSON sahi se paste nahi hua. Check karo brackets { } pure hain ya nahi.")
+    st.stop()
 except Exception as e:
-    st.error(f"Login Fail hua: {e}")
+    st.error(f"Connection Error: {e}")
     st.stop()
 
-# --- 4. AI SETUP ---
+# --- 3. AI SETUP ---
 genai.configure(api_key=gemini_key)
 def analyze_expense(image):
     model = genai.GenerativeModel("gemini-1.5-flash")
@@ -56,7 +46,7 @@ def analyze_expense(image):
     except:
         return None
 
-# --- 5. APP UI ---
+# --- 4. APP UI ---
 cam_img = st.camera_input("Bill Scan Karo")
 if cam_img:
     if st.button("Save Bill"):
