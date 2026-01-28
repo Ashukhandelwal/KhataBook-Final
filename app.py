@@ -5,127 +5,67 @@ from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import json
 from PIL import Image
-from datetime import datetime
 
 # --- 1. PAGE SETUP ---
-st.set_page_config(page_title="KhataBook AI", page_icon="💰", layout="centered")
+st.set_page_config(page_title="KhataBook AI", page_icon="💰")
+st.title("💰 AI Munim Ji")
 
-# --- 2. SECRETS SETUP (AUTO-REPAIR) ---
+# --- 2. KEY REPAIR (Sabse Zaruri Hissa) ---
 try:
     if "google_creds" in st.secrets:
+        # Secrets se data nikala
         creds_dict = dict(st.secrets["google_creds"])
         
-        # --- MAGIC FIX: Key Repair Logic ---
-        # Ye code check karega ki key tuti huyi to nahi hai aur use fix karega
-        if "private_key" in creds_dict:
-            p_key = creds_dict["private_key"]
-            
-            # Step 1: Literal '\n' ko asli enter mein badlo
-            p_key = p_key.replace("\\n", "\n")
-            
-            # Step 2: Agar key mein spaces ya formatting kachra hai, to saaf karo
-            if "-----BEGIN PRIVATE KEY-----" in p_key:
-                # Header aur Footer ko alag nikal lete hain
-                body = p_key.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "")
-                # Body me se saare spaces aur enters hata dete hain (Base64 cleaning)
-                body = body.replace(" ", "").replace("\n", "").strip()
-                # Ab wapas sahi dhache mein jodte hain
-                p_key = "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----"
-            
-            creds_dict["private_key"] = p_key
-        # -----------------------------------
+        # --- MAGIC REPAIR START ---
+        # Ye line check karegi ki key tuti hui hai ya judi hui
+        raw_key = creds_dict["private_key"]
+        
+        # 1. Agar key mein "\n" likha hua hai text ki tarah, to use asli enter banao
+        fixed_key = raw_key.replace("\\n", "\n")
+        
+        # 2. Wapas dictionary mein daal do
+        creds_dict["private_key"] = fixed_key
+        # --- MAGIC REPAIR END ---
         
         gemini_key = st.secrets["GEMINI_API_KEY"]
     else:
-        st.error("⚠️ Secrets nahi mile! Streamlit settings check karo.")
+        st.error("Secrets nahi mile!")
         st.stop()
 except Exception as e:
-    st.error(f"Setup Error: {e}")
+    st.error(f"Error: {e}")
     st.stop()
 
-# --- 3. CONNECTION ---
-genai.configure(api_key=gemini_key)
-
+# --- 3. GOOGLE SHEETS CONNECTION ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-client = gspread.authorize(creds)
-
-SHEET_NAME = "Expenses"
 try:
-    sheet = client.open(SHEET_NAME).sheet1
-except:
-    st.error(f"❌ Error: '{SHEET_NAME}' naam ki Sheet nahi mili! Google Sheet ka naam check kar.")
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    sheet = client.open("Expenses").sheet1
+except Exception as e:
+    st.error(f"Login Fail hua: {e}")
     st.stop()
 
-# --- 4. AI LOGIC ---
-def analyze_expense(input_type, content):
+# --- 4. AI SETUP ---
+genai.configure(api_key=gemini_key)
+def analyze_expense(image):
     model = genai.GenerativeModel("gemini-1.5-flash")
-    prompt = """
-    You are an expert accountant. Extract expense details into JSON.
-    Fields: 'Date' (DD/MM/YYYY), 'Item' (Short name), 'Category' (Food/Travel/Bills/Misc), 
-    'Amount' (Number only), 'PaymentMode' (UPI/Cash).
-    If Date is not clear, use today's date.
-    Output STRICTLY JSON. Do not use Markdown formatting.
-    """
+    prompt = "Extract: Date, Item, Category, Amount, PaymentMode. Return JSON."
     try:
-        if input_type == "text":
-            response = model.generate_content([prompt, f"User Input: {content}"])
-        elif input_type == "image":
-            response = model.generate_content([prompt, content])
-        
-        clean_text = response.text.replace("```json", "").replace("```", "").strip()
-        return json.loads(clean_text)
-    except Exception as e:
+        response = model.generate_content([prompt, image])
+        return json.loads(response.text.replace("```json","").replace("```",""))
+    except:
         return None
 
-# --- 5. UI LAYOUT ---
-st.title("💰 AI Munim Ji")
-st.caption("Kharcha likho nahi, bas bata do!")
-
-tab1, tab2 = st.tabs(["📝 Likho (Chat)", "📸 Scan Bill"])
-
-with tab1:
-    text_val = st.chat_input("Aaj kya kharcha hua? (e.g. 100 ka petrol)")
-    if text_val:
-        with st.chat_message("user"):
-            st.write(text_val)
-        with st.spinner("Munim ji likh rahe hain..."):
-            data = analyze_expense("text", text_val)
+# --- 5. APP UI ---
+cam_img = st.camera_input("Bill Scan Karo")
+if cam_img:
+    if st.button("Save Bill"):
+        with st.spinner("Munim ji hisaab laga rahe hain..."):
+            img = Image.open(cam_img)
+            data = analyze_expense(img)
             if data:
                 sheet.append_row([data.get('Date'), data.get('Item'), data.get('Category'), data.get('Amount'), data.get('PaymentMode')])
-                st.success(f"✅ Likh liya: ₹{data.get('Amount')} - {data.get('Item')}")
+                st.balloons()
+                st.success("Hisaab Likh Diya! 🎉")
             else:
-                st.error("Samajh nahi aaya, dobara likho.")
-
-with tab2:
-    cam_img = st.camera_input("Bill ki photo lo")
-    if cam_img:
-        img = Image.open(cam_img)
-        if st.button("Save Bill"):
-            with st.spinner("Bill padh raha hu..."):
-                data = analyze_expense("image", img)
-                if data:
-                    sheet.append_row([data.get('Date'), data.get('Item'), data.get('Category'), data.get('Amount'), data.get('PaymentMode')])
-                    st.balloons()
-                    st.success(f"✅ Saved: ₹{data.get('Amount')} ({data.get('Item')})")
-                else:
-                    st.error("Bill saaf nahi hai.")
-
-# --- 6. DASHBOARD ---
-st.divider()
-st.subheader("📊 Live Hisaab")
-try:
-    records = sheet.get_all_records()
-    if records:
-        df = pd.DataFrame(records)
-        if 'Amount' in df.columns:
-            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
-            total = df['Amount'].sum()
-            st.metric("Total Kharcha", f"₹{int(total)}")
-            st.dataframe(df.tail(5))
-        else:
-             st.write("Sheet mein 'Amount' column nahi mila.")
-    else:
-        st.info("Abhi register khali hai.")
-except Exception as e:
-    st.info("Data load ho raha hai... (ya Sheet khali hai)")
+                st.error("Bill saaf nahi aaya.")
