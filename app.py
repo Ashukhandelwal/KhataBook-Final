@@ -10,15 +10,30 @@ from datetime import datetime
 # --- 1. PAGE SETUP ---
 st.set_page_config(page_title="KhataBook AI", page_icon="💰", layout="centered")
 
-# --- 2. SECRETS SETUP (Fixed) ---
+# --- 2. SECRETS SETUP (AUTO-REPAIR) ---
 try:
     if "google_creds" in st.secrets:
         creds_dict = dict(st.secrets["google_creds"])
         
-        # --- YE WALI LINE IMPORTANT HAI (Error Fix) ---
-        # Ye private key ko theek karta hai taaki login fail na ho
+        # --- MAGIC FIX: Key Repair Logic ---
+        # Ye code check karega ki key tuti huyi to nahi hai aur use fix karega
         if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            p_key = creds_dict["private_key"]
+            
+            # Step 1: Literal '\n' ko asli enter mein badlo
+            p_key = p_key.replace("\\n", "\n")
+            
+            # Step 2: Agar key mein spaces ya formatting kachra hai, to saaf karo
+            if "-----BEGIN PRIVATE KEY-----" in p_key:
+                # Header aur Footer ko alag nikal lete hain
+                body = p_key.replace("-----BEGIN PRIVATE KEY-----", "").replace("-----END PRIVATE KEY-----", "")
+                # Body me se saare spaces aur enters hata dete hain (Base64 cleaning)
+                body = body.replace(" ", "").replace("\n", "").strip()
+                # Ab wapas sahi dhache mein jodte hain
+                p_key = "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----"
+            
+            creds_dict["private_key"] = p_key
+        # -----------------------------------
         
         gemini_key = st.secrets["GEMINI_API_KEY"]
     else:
@@ -103,7 +118,6 @@ try:
     records = sheet.get_all_records()
     if records:
         df = pd.DataFrame(records)
-        # Amount ko number mein convert karte hain taaki jod sakein
         if 'Amount' in df.columns:
             df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
             total = df['Amount'].sum()
