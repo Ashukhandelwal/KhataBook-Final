@@ -7,9 +7,8 @@ import json
 from PIL import Image
 
 # --- 1. PAGE CONFIG ---
-st.set_page_config(page_title="Smart Munim Debug", page_icon="🐞", layout="centered")
-st.title("🐞 Munim Ji (Debug Mode)")
-st.info("Ye mode humein batayega ki AI ke dimaag mein kya chal raha hai.")
+st.set_page_config(page_title="Smart Munim", page_icon="💳", layout="centered")
+st.title("💳 Smart Munim Ji")
 
 # --- 2. CONNECTION ---
 try:
@@ -28,72 +27,80 @@ except Exception as e:
     st.error(f"Connection Error: {e}")
     st.stop()
 
-# --- 3. AI LOGIC (With Spy) ---
+# --- 3. AI LOGIC (FIXED MODEL) ---
 def analyze_expense(content, input_type):
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    # YAHAN CHANGE KIYA HAI: 'latest' version use karenge
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
+    
     prompt = """
-    Extract expense data. Return ONLY a JSON object.
-    Keys: "Date", "Item", "Category", "Amount" (int/float), "PaymentMode".
-    Example: {"Date": "29/01/2026", "Item": "Burger", "Category": "Food", "Amount": 250, "PaymentMode": "UPI"}
+    Extract expense details into a SINGLE JSON Object.
+    Rules:
+    1. 'Date': Format DD/MM/YYYY.
+    2. 'Item': Combine items if multiple (e.g. "Burger + Coke").
+    3. 'Category': Food/Travel/Bills/Misc.
+    4. 'Amount': Grand Total (Number only).
+    5. 'PaymentMode': Cash/UPI/Card.
+    
+    Output JSON: {"Date": "...", "Item": "...", "Category": "...", "Amount": 0, "PaymentMode": "..."}
     """
     try:
-        # AI se baat karte hain
         if input_type == "image":
             response = model.generate_content([prompt, content])
         else:
             response = model.generate_content([prompt, f"Text: {content}"])
-        
-        # --- JASOOS CODE (Spy) ---
-        # Hum screen par print karenge ki AI ne kya bola
-        st.text("AI Raw Response (Debug):")
-        st.code(response.text) 
-        # -------------------------
-
-        # Safai Abhiyaan (JSON Cleaning)
-        clean_text = response.text
-        # Backticks hatate hain
-        clean_text = clean_text.replace("```json", "").replace("```", "").strip()
-        
-        # Agar AI ne koi faltu text likha hai to sirf { } wala hissa nikalenge
+            
+        clean_text = response.text.replace("```json", "").replace("```", "").strip()
         start = clean_text.find("{")
         end = clean_text.rfind("}") + 1
         if start != -1 and end != -1:
             clean_text = clean_text[start:end]
-
+            
         return json.loads(clean_text)
-
     except Exception as e:
-        st.error(f"⚠️ Parsing Error: {e}")
+        st.error(f"AI Error: {e}")
         return None
 
-# --- 4. UI ---
-tab1, tab2 = st.tabs(["📂 Upload (Best)", "✍️ Type"])
+# --- 4. APP UI ---
+tab1, tab2, tab3 = st.tabs(["📂 Gallery", "📸 Camera", "✍️ Type"])
 
 with tab1:
-    uploaded_file = st.file_uploader("Gallery se Bill/Note chuno", type=["jpg", "png", "jpeg"])
+    st.caption("Best for Mobile: Gallery se photo upload karein")
+    uploaded_file = st.file_uploader("Upload Bill", type=["jpg", "png", "jpeg"], label_visibility="collapsed")
     if uploaded_file:
         image = Image.open(uploaded_file)
-        st.image(image, caption="Uploaded Image", use_column_width=True)
-        if st.button("Analyze", type="primary"):
-            data = analyze_expense(image, "image")
-            if data:
-                sheet.append_row([data.get('Date'), data.get('Item'), data.get('Category'), data.get('Amount'), data.get('PaymentMode')])
-                st.balloons()
-                st.success("✅ Saved Successfully!")
-            else:
-                st.error("❌ Data save nahi hua. Upar 'AI Raw Response' check karo.")
+        st.image(image, caption="Preview", use_column_width=True)
+        if st.button("Save (Upload)", type="primary"):
+            with st.spinner("Analyzing..."):
+                data = analyze_expense(image, "image")
+                if data:
+                    sheet.append_row(list(data.values()))
+                    st.balloons()
+                    st.success(f"✅ Saved: ₹{data.get('Amount')} ({data.get('Item')})")
 
 with tab2:
-    txt = st.text_input("Likho (e.g. 100rs Chai)")
-    if st.button("Add"):
+    cam_img = st.camera_input("Camera")
+    if cam_img:
+        image = Image.open(cam_img)
+        if st.button("Save (Camera)"):
+            with st.spinner("Analyzing..."):
+                data = analyze_expense(image, "image")
+                if data:
+                    sheet.append_row(list(data.values()))
+                    st.balloons()
+                    st.success(f"✅ Saved: ₹{data.get('Amount')}")
+
+with tab3:
+    txt = st.text_input("Manual Entry")
+    if st.button("Save Text"):
         data = analyze_expense(txt, "text")
         if data:
             sheet.append_row(list(data.values()))
             st.success("✅ Saved!")
 
-# --- 5. Data ---
+st.divider()
 try:
     df = pd.DataFrame(sheet.get_all_records())
-    st.dataframe(df.tail(3))
+    if not df.empty:
+        st.dataframe(df.tail(3))
 except:
     pass
